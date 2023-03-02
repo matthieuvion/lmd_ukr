@@ -1,0 +1,6 @@
+.env
+.ipynb_checkpoints
+__pycache__
+.python-version
+playground.ipynb
+notes.py
