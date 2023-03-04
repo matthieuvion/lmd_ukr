@@ -15,15 +15,9 @@ from dotenv import load_dotenv
 class Article:
     url: str
     title: str
+    type_article: str
     keywords: list[str]
     content: str
-
-
-@dataclass
-class Search:
-    index: int
-    url: str
-    title: str
 
 
 class Api:
@@ -128,10 +122,46 @@ class Api:
                 raise Exception("No Result found")
             return results
 
-    def parse_article():
-        """Parse article metadata"""
-        return
+    def filter_search(self, urls: list(str), tag: str) -> list(str):
+        """Narrow down a list of urls : keep articles containing a given tag"""
 
-    def parse_comments():
+        filtered_search = []
+        with httpx.Client(headers=self.headers) as client:
+            for url in urls:
+                res = client.get(url)
+                html = HTMLParser(res.text())
+                metadata = html.css_first("script").text()
+                metadata = json.loads(re.search("({.+})", metadata).group(0))
+                tags = metadata["analytics"]["smart_tag"]["tags"]["keywords"]
+                filtered_search.append(url) if tag in tags else None
+
+        return filtered_search
+
+    def get_article(self, client, url: str) -> dict:
+        """Parse article metadata"""
+        res = client.get(url, headers=self.headers)
+        html = HTMLParser(res.text)
+
+        title = html.css_first("h1.article__title").text()
+        title = unicodedata.normalize("NFKD", "".join(title))
+        desc = html.css_first("p.article__desc").text()
+        content = [node.text() for node in html.css("p.article__paragraph ")]
+        content = unicodedata.normalize("NFKD", " ".join(content))
+
+        metadata = html.css_first("script").text()
+        metadata = json.loads(re.search("({.+})", metadata).group(0))
+        article_id = metadata["analytics"]["smart_tag"]["customObject"]["ID_Article"]
+        allow_comments = metadata["context"]["article"]["parsedMetadata"]["huit"][
+            "allowComments"
+        ]
+        keywords = metadata["analytics"]["smart_tag"]["tags"]["keywords"]
+        date = metadata["context"]["article"]["firstPublished"]["date"]
+        type_article = metadata["analytics"]["smart_tag"]["customObject"]
+
+        article = Article(url=url, title="", keywords="", content="")
+
+        return article
+
+    def get_comments(self, Article, url: str) -> list(dict):
         """Parse comments from article"""
         return
