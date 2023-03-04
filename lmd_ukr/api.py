@@ -30,8 +30,8 @@ class Api:
     """Le Monde (abonnés), search articles and extract content"""
 
     baseUrl = "https://www.lemonde.fr"
-    searchUrl = "https://www.lemonde.fr/recherche"
-    
+    searchUrl = "https://www.lemonde.fr/recherche/?"
+
     cookie = "lmd_sso_twipe={lmd_sso_twipe}; lmd_a_s={lmd_s}; lmd_a_sp={lmd_s}; lmd_stay_connected=1; lmd_a_m={lmd_m}; lmd_a_c=1; uid_dm=f8bb6ded-ea6d-42fd-6eb0-ae4eb62eb552; xtvrn=$43260$; xtan43260=-; xtant43260=1; kw.session_ts=1677086760394; kw.pv_session=4"
     headers = {
         "authority": "www.lemonde.fr",
@@ -58,49 +58,80 @@ class Api:
                 lmd_s=self.lmd_s,
             )
         else:
-            raise ValueError("cookies abonné "lmd_m" et "lmd_s" nécessaires")
+            raise ValueError('cookies abonné "lmd_m" et "lmd_s" nécessaires')
 
-    def _parse(html, method, selector):
-        """Used in parse functions not be be blocked if selector is not found"""
-        parse_methods = {
-            "css_first": html.css_first(selector).text(),
-            "css": html.css(selector),
-        }
-        try:
-            return parse_methods[method]
-        except AttributeError as e:
-            print(e)
-            return None
-
-    def _formatQuery(self, query: str):
-        """Convert query term(s) as a proper Search-url parameter"""
-        return "+".join([urllib.parse.quote(word) for word in query.split(" ")])
-
-    def search(self, query: str, start: str, end: str, **kwargs):
+    def search(self, query: str, start: str, end: str, **kwargs) -> list(dict):
         """
-        Parse a loadout entry (dict), extract weapons names then rename using wzlabels.json
-        
+        Search
+
         Args
         -------
         query: str, e.g. "ukraine" or "guerre ukraine"
         start, end: str, "dd/mm/yyyy"
-        
+
         Optional
         -------
-        search_sort: optional["dateCreated_desc", "dateCreated_asc, relevance_desc"]
-        max_pages: int, if you want to override n of result pages crawled
+        search_sort: optional["dateCreated_desc (default)", "dateCreated_asc, relevance_desc"]
+        max_pages: int, default is max number of results pages
         """
-        
-        query = self._formatQuery(query)
-        
-        with httpx.Client(headers=self.headers) as client:
-            res = client.get()
-            return keywords
+        search_parameters = {"search_keywords": query, "start_at": start, "end_at": end}
 
-    def parseArticle():
+        max_pages = kwargs.get("max_pages", 1)
+        url = Api.searchUrl + urllib.parse.urlencode(search_parameters)
+        print(f"Search url: {url}")
+
+        with httpx.Client(headers=self.headers) as client:
+
+            # get result page
+            res = client.get(url)
+            html = HTMLParser(res.text)
+            isResult = True if not html.css_first("p.search__no-result") else False
+
+            # isResult?, n of pages
+            if isResult:
+                river = True if html.css("a.river__pagination") else False
+                n_pages = (
+                    int(
+                        html.css("a.river__pagination.river__pagination--page-search")[
+                            -1
+                        ].text()
+                    )
+                    if river
+                    else 1
+                )
+                max_pages = (
+                    kwargs.get("max_pages", n_pages)
+                    if max_pages <= n_pages
+                    else n_pages
+                )
+                print(f" # result pages: {n_pages}, # pages crawled : {max_pages}")
+
+                # parse urls, titles
+                page = 1
+                results = []
+                while page <= max_pages:
+                    res = client.get(f"{url}&page={page}")
+                    html = HTMLParser(res.text)
+                    urls = [
+                        url.attributes["href"] for url in html.css("a.teaser__link")
+                    ]
+                    titles = [title.text() for title in html.css("h3.teaser__title")]
+                    result = [
+                        {"url": a_url, "title": a_title}
+                        for a_url, a_title in zip(urls, titles)
+                    ]
+
+                    print(f" Crawling page: {page}")
+                    results.extend(result)
+                    page += 1
+            else:
+                raise Exception("No Result found")
+            return results
+
+    def parse_article():
         """Parse article metadata"""
         return
 
-    def parseComments():
+    def parse_comments():
         """Parse comments from article"""
         return
