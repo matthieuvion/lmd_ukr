@@ -2,7 +2,7 @@ import re
 import json
 import unicodedata
 import urllib.parse
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import httpx
 from selectolax.parser import HTMLParser
@@ -21,6 +21,8 @@ class Article:
     keywords: list[str]
     article_type: str
     allow_comments: bool
+    premium: bool
+
 
 @dataclass
 class Comments:
@@ -41,12 +43,12 @@ class Api:
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
         "accept-language": "en-US,en;q=0.9",
         "sec-fetch-dest": "document",
-        "sec-fetch-mode": "navigate",S
+        "sec-fetch-mode": "navigate",
         "cookie": None,
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
     }
 
-    def __init__(self, lmd_m=None, lmd_s=None):
+    def __init__(self, lmd_m: str = None, lmd_s: str = None):
         self.lmd_m = lmd_m
         self.lmd_s = lmd_s
         self._login()
@@ -62,6 +64,7 @@ class Api:
             self.headers["cookie"] = Api.cookie.format(
                 lmd_sso_twipe=f"%7B%22token%22%3A%22{self.lmd_m}%22%7D",
                 lmd_s=self.lmd_s,
+                lmd_m=self.lmd_m,
             )
             self.client = httpx.Client(headers=self.headers)
         else:
@@ -76,7 +79,7 @@ class Api:
         string = unicodedata.normalize("NFKD", string)
         return " ".join(string.split())
 
-    def search(self, query: str, start: str, end: str, **kwargs) -> list(dict):
+    def search(self, query: str, start: str, end: str, **kwargs) -> list:
         """
         Args
         -------
@@ -143,12 +146,15 @@ class Api:
                 "allow_comments": meta["context"]["article"]["parsedMetadata"]["huit"][
                     "allowComments"
                 ],
+                "suscribe": meta["analytics"]["smart_tag"]["customObject"][
+                    "Statut_article"
+                ],
             }
             if meta
             else None
         )
 
-    def filter_search(self, urls: list(str), tag: str) -> list(str):
+    def filter_search(self, urls: list, tag: str) -> list:
         """Narrow down a list of urls : crawl then retain articles containing a given tag"""
         filtered_search = []
         for url in urls:
@@ -162,11 +168,11 @@ class Api:
         """Parse article"""
         html = self._fetch(url)
         title = self._normalize(html.css_first(Css.A_TITLE.value).text())
-        desc = html.css_first(Css.A_DESC.value).text()
+        desc = self._normalize(html.css_first(Css.A_DESC.value).text())
         content = self._normalize(
             " ".join([node.text() for node in html.css(Css.A_CONTENT.value)])
         )
-        meta = self.get_metadata(self.parse_metadata(html))
+        meta = self.get_metadata(html)
 
         return Article(
             url=url,
@@ -178,6 +184,7 @@ class Api:
             keywords=meta["keywords"],
             article_type=meta["article_type"],
             allow_comments=meta["allow_comments"],
+            premium=True if meta["suscribe"] == "Abo" else False,
         )
 
     def get_comments(self, article: type[Article]) -> type[Comments]:
@@ -189,7 +196,7 @@ class Api:
         if is_comment:
             river = True if html.css(Css.C_RIVER.value) else False
             count_str = html.css_first(Css.C_COUNT.value).text()
-            count = int(''.join(list(filter(str.isdigit, count_str))))
+            count = int("".join(list(filter(str.isdigit, count_str))))
             n_pages = html.css(Css.C_PAGES.value)[-1].text() if river else 1
             print(f" # comments {count} ({n_pages} pages)")
 
@@ -199,16 +206,19 @@ class Api:
             while page <= n_pages:
                 html = self._fetch(f"{url}&page={page}")
                 authors = [author.text() for author in html.css(Css.C_AUTHOR.value)]
-                contents = [self._normalize(content.text()) for content in html.css(Css.C_CONTENT.value)]
-                comments = [{"author":author, "content":content} for author, content in zip(authors, contents)]
+                contents = [
+                    self._normalize(content.text())
+                    for content in html.css(Css.C_CONTENT.value)
+                ]
+                comments = [
+                    {"author": author, "content": content}
+                    for author, content in zip(authors, contents)
+                ]
                 all_comments.extend(comments)
                 page += 1
-            
-            return Comments(article_id = article.article_id, count=count, comments=all_comments)
 
-        else:
-            return Comments(
-                article_id=article.article_id,
-                count = 0
-                comments=[None],
-            )
+        return Comments(
+            article_id=article.article_id,
+            count=count if is_comment else 0,
+            comments=all_comments if is_comment else [None],
+        )
