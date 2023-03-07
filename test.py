@@ -30,24 +30,27 @@ def main(**kwargs):
     search = api.search(
         query="macron", start="06/03/2023", end="07/03/2023", max_pages=1
     )
-    logging.info(f"Search done, first 2 results:\n {search[0:2]}")
+    logging.info(f"First 2 results:\n {search[0:2]}")
 
     """
     Get article
     """
 
-    # Returns an object Article
-    url = search[0]["url"]
-    a = api.get_article(url)
+    # Returns Article (object)
+    url = search[1]["url"]
+    art = api.get_article(url)
 
     # Access article properties and/or as a Dict
-    logging.info(f"Article id: {a.article_id}\n Article title: {a.title}")
-    logging.info(f"Article dictionary:\n, {pprint(asdict(a), depth=1)}")
+    logging.info(f"Article id: {art.article_id}\n Article title: {art.title}")
+    logging.info(f"Article dictionary:\n, {pprint(asdict(art), depth=1)}")
 
     """
-    Get article's comments
+    Get Comments
     """
-    comments = 
+
+    # Return article's comments (object)
+    coms = api.get_comments(art)
+    logging.info(f"Comments for id : {coms.article_id}\n content: {coms.comments[0:2]}")
 
 
 if __name__ == "__main__":
