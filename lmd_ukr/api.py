@@ -11,6 +11,16 @@ from .enums import Css
 
 
 @dataclass
+class Search:
+    query: str
+    url: str
+    is_result: bool
+    pages: int
+    retrieved: int
+    results: list
+
+
+@dataclass
 class Article:
     url: str
     title: str
@@ -53,6 +63,9 @@ class Api:
         self.lmd_s = lmd_s
         self._login()
 
+    def __repr__(self):
+        return f"Logged in client: {self.client}"
+
     def __exit__(self):
         self.client.close()
 
@@ -71,15 +84,17 @@ class Api:
             raise ValueError('cookies abonné "lmd_m" et "lmd_s" nécessaires')
 
     def _fetch(self, url):
+        """Convenient func to get+fetch html from url"""
         res = self.client.get(url)
         html = HTMLParser(res.text)
         return html
 
     def _normalize(self, string):
+        """Util :remove white spaces / special char"""
         string = unicodedata.normalize("NFKD", string)
         return " ".join(string.split())
 
-    def search(self, query: str, start: str, end: str, **kwargs) -> list:
+    def search(self, query: str, start: str, end: str, **kwargs) -> type[Search]:
         """
         Args
         -------
@@ -92,10 +107,12 @@ class Api:
         max_pages: optional(int) else we get all results pages
         """
         search_parameters = {"search_keywords": query, "start_at": start, "end_at": end}
-
+        search_parameters["search_sort"] = kwargs.get(
+            "dateCreated_desc", "dateCreated_desc"
+        )
         max_pages = kwargs.get("max_pages", 1)
-        url = Api.searchUrl + urllib.parse.urlencode(search_parameters)
-        print(f"Search url: {url}")
+
+        url = f"{Api.searchUrl}{urllib.parse.urlencode(search_parameters)}"
 
         # get result page
         html = self._fetch(url)
@@ -108,7 +125,6 @@ class Api:
             max_pages = (
                 kwargs.get("max_pages", n_pages) if max_pages <= n_pages else n_pages
             )
-            print(f" # result pages: {n_pages}, # pages crawled : {max_pages}")
 
             # parse urls, titles
             page = 1
@@ -122,15 +138,21 @@ class Api:
                     for a_url, a_title in zip(urls, titles)
                 ]
 
-                print(f"Crawling page: {page}")
                 results.extend(result)
                 page += 1
         else:
             raise Exception("No Result found")
-        return results
+        return Search(
+            query=query,
+            url=url,
+            is_result=is_result,
+            pages=n_pages,
+            retrieved=len(results) if results else 0,
+            results=results,
+        )
 
     def get_metadata(self, html) -> dict:
-        """Retrieve {metadada}from article's html"""
+        """Retrieve {metadada} from article's html"""
         meta = html.css_first(Css.A_METADATA.value).text()
         meta = json.loads(re.search("({.+})", meta).group(0)) if meta else None
         return (
@@ -165,12 +187,12 @@ class Api:
         return filtered_search
 
     def get_article(self, url: str) -> type[Article]:
-        """Parse article"""
+        """Parse article, given a (valid) url"""
         html = self._fetch(url)
         title = self._normalize(html.css_first(Css.A_TITLE.value).text())
         desc = self._normalize(html.css_first(Css.A_DESC.value).text())
-        content = self._normalize(
-            " ".join([node.text() for node in html.css(Css.A_CONTENT.value)])
+        content = " ".join(
+            [self._normalize(node.text()) for node in html.css(Css.A_CONTENT.value)]
         )
         meta = self.get_metadata(html)
 
@@ -188,7 +210,8 @@ class Api:
         )
 
     def get_comments(self, article: type[Article]) -> type[Comments]:
-        """Parse comments from article. optional(max_pages)"""
+        """Parse comments from a previously crawled Article"""
+
         url = f"{article.url}?contributions"
         html = self._fetch(url)
         is_comment = True if html.css_first(Css.C_IS_COMMENT.value).text() else False
@@ -197,8 +220,7 @@ class Api:
             river = True if html.css(Css.C_RIVER.value) else False
             count_str = html.css_first(Css.C_COUNT.value).text()
             count = int("".join(list(filter(str.isdigit, count_str))))
-            n_pages = html.css(Css.C_PAGES.value)[-1].text() if river else 1
-            print(f" # comments {count} ({n_pages} pages)")
+            n_pages = int(html.css(Css.C_PAGES.value)[-1].text()) if river else 1
 
             # parse authors, comments content
             page = 1
@@ -217,8 +239,8 @@ class Api:
                 all_comments.extend(comments)
                 page += 1
 
-        return Comments(
-            article_id=article.article_id,
-            count=count if is_comment else 0,
-            comments=all_comments if is_comment else [None],
-        )
+            return Comments(
+                article_id=article.article_id,
+                count=count if is_comment else 0,
+                comments=all_comments if is_comment else [None],
+            )
