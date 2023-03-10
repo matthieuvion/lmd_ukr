@@ -3,9 +3,13 @@ import json
 import unicodedata
 import urllib.parse
 from dataclasses import dataclass
+from functools import lru_cache
+import random
+import time
 
 import httpx
 from selectolax.parser import HTMLParser
+from pyrate_limiter import Duration, Limiter, RequestRate
 
 from .enums import Css
 
@@ -42,7 +46,13 @@ class Comments:
 
 
 class Api:
-    """Le Monde (abonnés), search articles and extract content"""
+    """Le Monde (suscriber/abonnés), search articles and extract content
+    Untested if not a suscriber, but should work with minor adaptations (i.e. rework headers)
+    Rate limits:
+    ------------
+    Do exist but obv. not documented. Being too harsh can lead to an temporary (at least?) IP ban of +- 20mn
+    E.g. Endpoint./recherche?  keep < 50 requests/mn
+    """
 
     baseUrl = "https://www.lemonde.fr"
     searchUrl = "https://www.lemonde.fr/recherche/?"
@@ -57,6 +67,9 @@ class Api:
         "cookie": None,
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
     }
+
+    # Rate limits, here 30 requests/mn cf. doc pyrate limiter
+    limiter = Limiter(RequestRate(30, Duration.MINUTE))
 
     def __init__(self, lmd_m: str = None, lmd_s: str = None):
         self.lmd_m = lmd_m
@@ -83,14 +96,19 @@ class Api:
         else:
             raise ValueError('cookies abonné "lmd_m" et "lmd_s" nécessaires')
 
+    @limiter.ratelimit("fetch", delay=True)
+    @lru_cache(maxsize=256)
     def _fetch(self, url):
-        """Convenient func to get+fetch html from url"""
+        """Main method used to fetch url + parse html at once
+        Caching, and rate limiting apply
+        """
         res = self.client.get(url)
         html = HTMLParser(res.text)
+        time.sleep(random.uniform(0.5, 0.7))
         return html
 
     def _normalize(self, string):
-        """Util :remove white spaces / special char"""
+        """Util :remove white spaces / special char from content string"""
         string = unicodedata.normalize("NFKD", string)
         return " ".join(string.split())
 
@@ -130,6 +148,7 @@ class Api:
             page = 1
             results = []
             while page <= max_pages:
+                print(f"page:{page}/{max_pages}")
                 html = self._fetch(f"{url}&page={page}")
                 urls = [url.attributes["href"] for url in html.css(Css.S_URL.value)]
                 titles = [title.text() for title in html.css(Css.S_TITLE.value)]
@@ -187,7 +206,9 @@ class Api:
         return filtered_search
 
     def get_article(self, url: str) -> type[Article]:
-        """Parse article, given a (valid) url"""
+        """Parse article, given a (valid) article url
+        For now "Live" url are not supported
+        """
         html = self._fetch(url)
         title = self._normalize(html.css_first(Css.A_TITLE.value).text())
         desc = self._normalize(html.css_first(Css.A_DESC.value).text())
