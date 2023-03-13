@@ -1,12 +1,12 @@
+from dataclasses import dataclass
 import re
 import json
 import unicodedata
-import urllib.parse
-from dataclasses import dataclass
-from functools import lru_cache
 import random
 import time
+import urllib.parse
 
+from joblib import Memory
 import httpx
 from selectolax.parser import HTMLParser
 from pyrate_limiter import Duration, Limiter, RequestRate
@@ -50,7 +50,7 @@ class Api:
     Untested if not a suscriber, but should work with minor adaptations (i.e. rework headers)
     Rate limits:
     ------------
-    Do exist but obv. not documented. Being too harsh can lead to an temporary (at least?) IP ban of +- 20mn
+    Do exist but obv. not documented. Being too harsh can lead to an temporary (at least?) IP ban of +- 45mn
     E.g. Endpoint./recherche?  keep < 50 requests/mn
     """
 
@@ -68,8 +68,10 @@ class Api:
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
     }
 
-    # Rate limits, here 30 requests/mn cf. doc pyrate limiter
+    # Rate limits, here 30 req/min cf. doc pyrate limiter ; (disk) caching
     limiter = Limiter(RequestRate(30, Duration.MINUTE))
+    cache_location = "./data/cache"
+    memory = Memory(cache_location, verbose=0)
 
     def __init__(self, lmd_m: str = None, lmd_s: str = None):
         self.lmd_m = lmd_m
@@ -83,7 +85,7 @@ class Api:
         self.client.close()
 
     def _login(self):
-        """Build client with custom headers, from personal tokens (abonné)"""
+        """Build httpx client with custom headers, from personal tokens (abonné)"""
 
         if self.lmd_m and self.lmd_s:
             self.headers = Api.headers
@@ -97,20 +99,40 @@ class Api:
             raise ValueError('cookies abonné "lmd_m" et "lmd_s" nécessaires')
 
     @limiter.ratelimit("fetch", delay=True)
-    @lru_cache(maxsize=256)
+    @memory.cache
     def _fetch(self, url):
         """Main method used to fetch url + parse html at once
-        Caching, and rate limiting apply
+        Caching and rate limiting apply
         """
         res = self.client.get(url)
         html = HTMLParser(res.text)
         time.sleep(random.uniform(0.5, 0.7))
         return html
 
-    def _normalize(self, string):
+    def get_css_first(self, html, selector) -> list | None:
+        """Error Catching for HTMLParser .css_first & .text() methods
+        Mainly used in get_article() to catch non "standard" article
+        """
+        try:
+            return html.css_first(selector).text()
+        except AttributeError as e:
+            print(f"{e}, (attribute {selector} is missing)")
+            return None
+
+    def get_css(self, html, selector) -> str | None:
+        """Error Catching for HTMLParser .css & .text() methods
+        Mainly used in get_article() to catch non "standard" article
+        """
+        try:
+            return [node.text() for node in html.css(selector)]
+        except AttributeError as e:
+            print(f"{e}, (attribute(s) {selector} are missing)")
+            return None
+
+    def _clean(self, string) -> str | None:
         """Util :remove white spaces / special char from content string"""
-        string = unicodedata.normalize("NFKD", string)
-        return " ".join(string.split())
+        string = unicodedata.normalize("NFKD", string) if string else None
+        return " ".join(string.split()) if string else None
 
     def search(self, query: str, start: str, end: str, **kwargs) -> type[Search]:
         """
@@ -136,7 +158,7 @@ class Api:
         html = self._fetch(url)
         is_result = True if not html.css_first(Css.S_IS_RESULT.value) else False
 
-        # is result?, is several pages ?, n of pages
+        # is result?, is several pages ? (river)
         if is_result:
             river = True if html.css(Css.S_RIVER.value) else False
             n_pages = int(html.css(Css.S_PAGES.value)[-1].text()) if river else 1
@@ -170,53 +192,55 @@ class Api:
             results=results,
         )
 
-    def get_metadata(self, html) -> dict:
-        """Retrieve {metadada} from article's html"""
-        meta = html.css_first(Css.A_METADATA.value).text()
-        meta = json.loads(re.search("({.+})", meta).group(0)) if meta else None
-        return (
-            {
-                "article_id": meta["analytics"]["smart_tag"]["customObject"][
-                    "ID_Article"
-                ],
-                "date": meta["context"]["article"]["firstPublished"]["date"],
-                "keywords": meta["analytics"]["smart_tag"]["tags"]["keywords"],
-                "article_type": meta["analytics"]["smart_tag"]["customObject"][
-                    "Nature_edito"
-                ],
-                "allow_comments": meta["context"]["article"]["parsedMetadata"]["huit"][
-                    "allowComments"
-                ],
-                "suscribe": meta["analytics"]["smart_tag"]["customObject"][
-                    "Statut_article"
-                ],
-            }
-            if meta
-            else None
+    def get_metadata(self, html, **kwargs) -> dict:
+        """
+        Retrieve metadada from article's html
+        Optional:
+        ---------
+        "filter_by" = "your_tag" : check if a given tag in metadata keywords (exact match)
+        """
+        tag = kwargs.get("filter_by", False)
+        html_meta = html.css_first(Css.A_METADATA.value).text()
+        dict_meta = (
+            json.loads(re.search("({.+})", html_meta).group(0)) if html_meta else None
         )
-
-    def filter_search(self, urls: list, tag: str) -> list:
-        """Narrow down a list of urls : crawl then retain articles containing a given tag"""
-        filtered_search = []
-        for url in urls:
-            html = self._fetch(url)
-            metadata = self.get_metadata(html)
-            filtered_search.append(url) if tag in metadata["keywords"] else None
-
-        return filtered_search
+        meta = {
+            "article_id": dict_meta["analytics"]["smart_tag"]["customObject"][
+                "ID_Article"
+            ],
+            "date": dict_meta["context"]["article"]["firstPublished"]["date"],
+            "keywords": dict_meta["analytics"]["smart_tag"]["tags"]["keywords"],
+            "article_type": dict_meta["analytics"]["smart_tag"]["customObject"][
+                "Nature_edito"
+            ],
+            # "parsedMetadata" does not exist for Live "article"
+            "allow_comments": dict_meta["context"]["article"]["parsedMetadata"]["huit"][
+                "allowComments"
+            ]
+            if dict_meta["context"]["article"].get("parsedMetadata", False)
+            else False,
+            "suscribe": dict_meta["analytics"]["smart_tag"]["customObject"][
+                "Statut_article"
+            ],
+        }
+        if tag:
+            meta["tags_contains"] = {
+                "tag": tag,
+                "is_tag": True if tag in meta["keywords"] else False,
+            }
+        return meta
 
     def get_article(self, url: str) -> type[Article]:
         """Parse article, given a (valid) article url
-        For now "Live" url are not supported
+        "Live" urls are not fully supported (do not throws error but incomplete)
         """
         html = self._fetch(url)
-        title = self._normalize(html.css_first(Css.A_TITLE.value).text())
-        desc = self._normalize(html.css_first(Css.A_DESC.value).text())
+        title = self._clean(self.get_css_first(html, selector=Css.A_TITLE.value))
+        desc = self._clean(self.get_css_first(html, selector=Css.A_DESC.value))
         content = " ".join(
-            [self._normalize(node.text()) for node in html.css(Css.A_CONTENT.value)]
+            [self._clean(node.text()) for node in html.css(Css.A_CONTENT.value)]
         )
         meta = self.get_metadata(html)
-
         return Article(
             url=url,
             title=title,
@@ -231,37 +255,50 @@ class Api:
         )
 
     def get_comments(self, article: type[Article]) -> type[Comments]:
-        """Parse comments from a previously crawled Article"""
+        """Parse comments, given a previously crawled Article()"""
 
         url = f"{article.url}?contributions"
         html = self._fetch(url)
-        is_comment = True if html.css_first(Css.C_IS_COMMENT.value).text() else False
 
-        if is_comment:
-            river = True if html.css(Css.C_RIVER.value) else False
-            count_str = html.css_first(Css.C_COUNT.value).text()
-            count = int("".join(list(filter(str.isdigit, count_str))))
-            n_pages = int(html.css(Css.C_PAGES.value)[-1].text()) if river else 1
-
-            # parse authors, comments content
-            page = 1
-            all_comments = []
-            while page <= n_pages:
-                html = self._fetch(f"{url}&page={page}")
-                authors = [author.text() for author in html.css(Css.C_AUTHOR.value)]
-                contents = [
-                    self._normalize(content.text())
-                    for content in html.css(Css.C_CONTENT.value)
-                ]
-                comments = [
-                    {"author": author, "content": content}
-                    for author, content in zip(authors, contents)
-                ]
-                all_comments.extend(comments)
-                page += 1
-
-            return Comments(
-                article_id=article.article_id,
-                count=count if is_comment else 0,
-                comments=all_comments if is_comment else [None],
+        if article.allow_comments:
+            # is_comment = (
+            #    True if html.css_first(Css.C_IS_COMMENT.value).text() else False
+            # )
+            is_comment = (
+                True
+                if self.get_css_first(html, selector=Css.C_IS_COMMENT.value)
+                else False
             )
+            print(f"value of is_comment: {is_comment}")
+            if is_comment:
+                river = True if html.css(Css.C_RIVER.value) else False
+                count_str = html.css_first(Css.C_COUNT.value).text()
+                count = int("".join(list(filter(str.isdigit, count_str))))
+                n_pages = int(html.css(Css.C_PAGES.value)[-1].text()) if river else 1
+
+                # parse coms authors, contents
+                page = 1
+                all_comments = []
+                while page <= n_pages:
+                    html = self._fetch(f"{url}&page={page}")
+                    authors = [author.text() for author in html.css(Css.C_AUTHOR.value)]
+                    contents = [
+                        self._clean(content.text())
+                        for content in html.css(Css.C_CONTENT.value)
+                    ]
+                    comments = [
+                        {"author": author, "content": content}
+                        for author, content in zip(authors, contents)
+                    ]
+                    all_comments.extend(comments)
+                    page += 1
+
+                return Comments(
+                    article_id=article.article_id,
+                    count=count if is_comment else 0,
+                    comments=all_comments if is_comment else [None],
+                )
+            else:
+                return Comments(article_id=article.article_id, count=0, comments=[None])
+        else:
+            return Comments(article_id=article.article_id, count=0, comments=[None])
