@@ -6,10 +6,9 @@ import random
 import time
 import urllib.parse
 
-from joblib import Memory
 import httpx
 from selectolax.parser import HTMLParser
-from pyrate_limiter import Duration, Limiter, RequestRate
+
 
 from .enums import Css
 
@@ -51,7 +50,7 @@ class Api:
     Rate limits:
     ------------
     Do exist but obv. not documented. Being too harsh can lead to an temporary (at least?) IP ban of +- 45mn
-    E.g. Endpoint./recherche?  keep < 50 requests/mn
+    E.g. Endpoint./recherche?  keep < 40 requests/mn
     """
 
     baseUrl = "https://www.lemonde.fr"
@@ -67,11 +66,6 @@ class Api:
         "cookie": None,
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
     }
-
-    # Rate limits, here 30 req/min cf. doc pyrate limiter ; (disk) caching
-    limiter = Limiter(RequestRate(30, Duration.MINUTE))
-    cache_location = "./data/cache"
-    memory = Memory(cache_location, verbose=0)
 
     def __init__(self, lmd_m: str = None, lmd_s: str = None):
         self.lmd_m = lmd_m
@@ -94,19 +88,17 @@ class Api:
                 lmd_s=self.lmd_s,
                 lmd_m=self.lmd_m,
             )
-            self.client = httpx.Client(headers=self.headers)
+            self.client = httpx.Client(headers=self.headers, timeout=10)
         else:
             raise ValueError('cookies abonné "lmd_m" et "lmd_s" nécessaires')
 
-    @limiter.ratelimit("fetch", delay=True)
-    @memory.cache
     def _fetch(self, url):
         """Main method used to fetch url + parse html at once
-        Caching and rate limiting apply
+        You should apply (your own) rate limits and/or caching in your main()
         """
         res = self.client.get(url)
         html = HTMLParser(res.text)
-        time.sleep(random.uniform(0.5, 0.7))
+        time.sleep(random.uniform(0.6, 0.9))
         return html
 
     def get_css_first(self, html, selector) -> list | None:
@@ -192,14 +184,15 @@ class Api:
             results=results,
         )
 
-    def get_metadata(self, html, **kwargs) -> dict:
+    def get_metadata(self, html, filter_by: str | None = None) -> dict:
         """
         Retrieve metadada from article's html
         Optional:
         ---------
         "filter_by" = "your_tag" : check if a given tag in metadata keywords (exact match)
         """
-        tag = kwargs.get("filter_by", False)
+        # tag = kwargs.get("filter_by", False)
+        tag = filter_by
         html_meta = html.css_first(Css.A_METADATA.value).text()
         dict_meta = (
             json.loads(re.search("({.+})", html_meta).group(0)) if html_meta else None
@@ -224,15 +217,18 @@ class Api:
             ],
         }
         if tag:
-            meta["tags_contains"] = {
+            meta["tags_contain"] = {
                 "tag": tag,
                 "is_tag": True if tag in meta["keywords"] else False,
             }
         return meta
 
-    def get_article(self, url: str) -> type[Article]:
-        """Parse article, given a (valid) article url
+    def get_article(self, url: str, **kwargs) -> type[Article]:
+        """
+        Parse article, given a (valid) article url
         "Live" urls are not fully supported (do not throws error but incomplete)
+        Optional:
+        ---------
         """
         html = self._fetch(url)
         title = self._clean(self.get_css_first(html, selector=Css.A_TITLE.value))
@@ -261,15 +257,11 @@ class Api:
         html = self._fetch(url)
 
         if article.allow_comments:
-            # is_comment = (
-            #    True if html.css_first(Css.C_IS_COMMENT.value).text() else False
-            # )
             is_comment = (
                 True
                 if self.get_css_first(html, selector=Css.C_IS_COMMENT.value)
                 else False
             )
-            print(f"value of is_comment: {is_comment}")
             if is_comment:
                 river = True if html.css(Css.C_RIVER.value) else False
                 count_str = html.css_first(Css.C_COUNT.value).text()
