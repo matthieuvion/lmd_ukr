@@ -4,3 +4,7 @@ __pycache__
 .python-version
 playground.ipynb
 notes.py
+data/cache/
+data/results_ukraine
+data/articles_ukraine
+data/comments_ukraine

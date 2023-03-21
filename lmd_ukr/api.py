@@ -2,13 +2,12 @@ from dataclasses import dataclass
 import re
 import json
 import unicodedata
-import random
-import time
 import urllib.parse
+import time
+import random
 
 import httpx
 from selectolax.parser import HTMLParser
-
 
 from .enums import Css
 
@@ -46,11 +45,13 @@ class Comments:
 
 class Api:
     """Le Monde (suscriber/abonnés), search articles and extract content
-    Untested if not a suscriber, but should work with minor adaptations (i.e. rework headers)
+    Should work with minor adaptations for non suscribers
+    I.e. rework headers + probably disable access to premium articles
+
     Rate limits:
     ------------
     Do exist but obv. not documented. Being too harsh can lead to an temporary (at least?) IP ban of +- 45mn
-    E.g. Endpoint./recherche?  keep < 40 requests/mn
+    E.g. endpoint : ./recherche? keep < ~30 requests/mn. On articles & comments, if any, it's higher
     """
 
     baseUrl = "https://www.lemonde.fr"
@@ -73,7 +74,7 @@ class Api:
         self._login()
 
     def __repr__(self):
-        return f"Logged in client: {self.client}"
+        return f"Logged-in client ({self.client})"
 
     def __exit__(self):
         self.client.close()
@@ -88,21 +89,39 @@ class Api:
                 lmd_s=self.lmd_s,
                 lmd_m=self.lmd_m,
             )
-            self.client = httpx.Client(headers=self.headers, timeout=10)
+            self.client = httpx.Client(headers=self.headers, timeout=8)
         else:
             raise ValueError('cookies abonné "lmd_m" et "lmd_s" nécessaires')
 
-    def _fetch(self, url):
-        """Main method used to fetch url + parse html at once
-        You should apply (your own) rate limits and/or caching in your main()
+    def _fetch(self, url) -> HTMLParser:
+        """Fetch url with httpx client & parse html (selectolax), at once
+        Note : you should apply rate limits/backoff and or caching in your main()
+        TODO: more status_code handling
         """
-        res = self.client.get(url)
-        html = HTMLParser(res.text)
-        time.sleep(random.uniform(0.6, 0.9))
-        return html
+        time.sleep(random.uniform(0.6, 0.8))
+        response = self.client.get(url)
+
+        if 300 > response.status_code >= 200:
+            return HTMLParser(response.text)
+        # url redirect (e.g. an updated article -> new url)
+        elif response.status_code == 301:
+            response = self.client.send(response.next_request)
+            return HTMLParser(response.text)
+        else:
+            print(f"Error {response.status_code}.\n{response}")
+
+    def _type_url(self, url) -> str:
+        """Convenience function to check if an url is article, blog or live"""
+        url_path = urllib.parse.urlparse(url).path.split("/")
+        if url_path[1] == "blog":
+            return "blog"
+        elif url_path[2] == "live":
+            return "live"
+        else:
+            return "article"
 
     def get_css_first(self, html, selector) -> list | None:
-        """Error Catching for HTMLParser .css_first & .text() methods
+        """Error Catching for HTMLParser .css_first & AND .text() methods
         Mainly used in get_article() to catch non "standard" article
         """
         try:
@@ -112,7 +131,7 @@ class Api:
             return None
 
     def get_css(self, html, selector) -> str | None:
-        """Error Catching for HTMLParser .css & .text() methods
+        """Error Catching for HTMLParser .css AND .text() methods
         Mainly used in get_article() to catch non "standard" article
         """
         try:
@@ -136,7 +155,7 @@ class Api:
         Optional
         -------
         search_sort: optional["dateCreated_desc (default)", "dateCreated_asc, relevance_desc"]
-        max_pages: optional(int) else we get all results pages
+        max_pages: optional(int) get max_pages instead of all pages
         """
         search_parameters = {"search_keywords": query, "start_at": start, "end_at": end}
         search_parameters["search_sort"] = kwargs.get(
@@ -187,12 +206,11 @@ class Api:
     def get_metadata(self, html, filter_by: str | None = None) -> dict:
         """
         Retrieve metadada from article's html
+        Blog articles and Articles "M publicité" not supported
         Optional:
         ---------
         "filter_by" = "your_tag" : check if a given tag in metadata keywords (exact match)
         """
-        # tag = kwargs.get("filter_by", False)
-        tag = filter_by
         html_meta = html.css_first(Css.A_METADATA.value).text()
         dict_meta = (
             json.loads(re.search("({.+})", html_meta).group(0)) if html_meta else None
@@ -206,37 +224,35 @@ class Api:
             "article_type": dict_meta["analytics"]["smart_tag"]["customObject"][
                 "Nature_edito"
             ],
-            # "parsedMetadata" does not exist for Live "article"
-            "allow_comments": dict_meta["context"]["article"]["parsedMetadata"]["huit"][
-                "allowComments"
-            ]
-            if dict_meta["context"]["article"].get("parsedMetadata", False)
-            else False,
             "suscribe": dict_meta["analytics"]["smart_tag"]["customObject"][
                 "Statut_article"
             ],
         }
-        if tag:
+        if filter_by:
             meta["tags_contain"] = {
-                "tag": tag,
-                "is_tag": True if tag in meta["keywords"] else False,
+                "tag": filter_by,
+                "is_tag": True if filter_by in meta["keywords"] else False,
             }
         return meta
 
     def get_article(self, url: str, **kwargs) -> type[Article]:
         """
         Parse article, given a (valid) article url
-        "Live" urls are not fully supported (do not throws error but incomplete)
-        Optional:
-        ---------
+        "Live" urls are not fully supported (do not throws error but incomplete content)
+        Blog &  Articles "M publicité" not supported
         """
         html = self._fetch(url)
         title = self._clean(self.get_css_first(html, selector=Css.A_TITLE.value))
         desc = self._clean(self.get_css_first(html, selector=Css.A_DESC.value))
         content = " ".join(
-            [self._clean(node.text()) for node in html.css(Css.A_CONTENT.value)]
+            [
+                self._clean(node.text())
+                for node in html.css(Css.A_CONTENT.value)
+                if self._clean(node.text()) is not None
+            ]
         )
         meta = self.get_metadata(html)
+        allow_comments = self.get_css(html, selector=Css.A_COMS_ALLOWED.value)
         return Article(
             url=url,
             title=title,
@@ -246,7 +262,7 @@ class Api:
             date=meta["date"],
             keywords=meta["keywords"],
             article_type=meta["article_type"],
-            allow_comments=meta["allow_comments"],
+            allow_comments=True if allow_comments else False,
             premium=True if meta["suscribe"] == "Abo" else False,
         )
 
@@ -254,9 +270,9 @@ class Api:
         """Parse comments, given a previously crawled Article()"""
 
         url = f"{article.url}?contributions"
-        html = self._fetch(url)
 
         if article.allow_comments:
+            html = self._fetch(url)
             is_comment = (
                 True
                 if self.get_css_first(html, selector=Css.C_IS_COMMENT.value)

@@ -14,6 +14,8 @@ class Css(Enum):
     A_DESC = "p.article__desc"
     A_METADATA = "script"
     A_CONTENT = "p.article__paragraph "
+    A_COMS_ALLOWED = "a.comments__active"
+    A_COMS_DISABLED = "p.comments__blocked-btn"
 
     # comments html selectors
     C_IS_COMMENT = "h3.comments__title"
