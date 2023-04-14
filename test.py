@@ -2,8 +2,7 @@ import os
 from dotenv import load_dotenv
 import logging
 from pprint import pprint
-
-# from dataclasses import asdict
+from dataclasses import asdict
 
 from lmd_ukr import Api
 
@@ -41,6 +40,7 @@ def main(**kwargs):
         f"Query: {search.query}, Is result: {search.is_result}, # urls retrieved: {search.retrieved}"
     )
     pprint(search, depth=1)
+    pprint(asdict(search), depth=1)
 
     """
     Article (-> object)
@@ -61,7 +61,7 @@ def main(**kwargs):
 
     # Get article's comments, this time our input param in an Article object
     coms = api.get_comments(article)
-    logging.info(f"Retrieved Comments with attr. : {coms.__dict__.keys()}")
+    logging.info(f"Retrieved Comments with attr.: {coms.__dict__.keys()}")
     pprint(f"Comments for article {coms.article_id}: {coms}")
 
 

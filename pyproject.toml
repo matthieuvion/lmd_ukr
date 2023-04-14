@@ -2,7 +2,7 @@
 name = "lmd-ukr"
 version = "0.1.0"
 description = "Out of curiosity, comments activity on Le Monde Ukraine coverage"
-authors = ["Matthieu Vion <deletethisviomatthieu@gmail.com>"]
+authors = ["Matthieu Vion <deletethisvionmatthieu@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 packages = [{include = "lmd_ukr"}]
