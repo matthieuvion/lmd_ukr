@@ -8,26 +8,20 @@ logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", level=loggin
 
 
 """
-
-Create db.ukr (sqlite), create tables articles and comments,
-Populate with previously api-crawled-saved, json files
-
+1. Create db.ukr (sqlite), create tables articles and comments
 """
 
 
 def create_connection(db_file):
-    """create a database connection to a SQLite database
-    Create db if does not exist
+    """create a database connection to the SQLite database
+    Create db if not exist
     """
     conn = None
     try:
         conn = sqlite3.connect(db_file)
-        print(sqlite3.version)
+        return conn
     except Error as e:
         print(e)
-    finally:
-        if conn:
-            conn.close()
 
 
 def create_table(conn, sql_create_table):
@@ -39,17 +33,24 @@ def create_table(conn, sql_create_table):
         print(e)
 
 
+"""
+2. Format (json -> object already) files to be fed into db
+"""
+
+
 def parse_article(article: dict) -> tuple:
     """Format a dict article to feed a tuple of n values into db"""
     return (
         article["article_id"],
         article["url"],
+        article["desc"],
         article["title"],
         article["content"],
         article["date"],
         str(article["keywords"]),
         article["article_type"],
         article["allow_comments"],
+        article["premium"],
     )
 
 
@@ -72,6 +73,11 @@ def parse_comments(comments: dict) -> list[tuple]:
         return [(comments["article_id"], "None", "None")]
 
 
+"""
+3.  Populate sqlite db, article by article, bactch-wise for comments (faster)
+"""
+
+
 def create_article(conn, article: tuple):
     """Insert properly formatted article into db, row by row"""
 
@@ -79,13 +85,14 @@ def create_article(conn, article: tuple):
         article_id,
         url,
         title,
+        desc,
         content,
         date,
         keywords,
         article_type,
         allow_comments,
         premium
-        ) VALUES(?,?,?,?,?,?,?,?,?)"""
+        ) VALUES(?,?,?,?,?,?,?,?,?,?)"""
     cur = conn.cursor()
     cur.execute(sql, article)
     conn.commit()
@@ -109,12 +116,15 @@ def create_batch_comments(conn, list_comments: list[tuple]) -> None:
 
 
 def main():
+    # sqlite db name
     database = r"ukr.db"
 
-    path_articles = Path("articles_ukraine")
+    # load json articles and comments (locally)
+    # We saved them continuously/individually while crawling
+    path_articles = Path("data/articles_ukraine")
     articles_json = [article for article in path_articles.glob("*.json")]
 
-    path_comments = Path("comments_ukraine")
+    path_comments = Path("data/comments_ukraine")
     comments_json = [comment for comment in path_comments.glob("*.json")]
 
     """
@@ -126,6 +136,7 @@ def main():
         article_id integer PRIMARY KEY,
         url text,
         title text,
+        desc text,
         content text,
         date text,
         keywords text,
@@ -140,8 +151,6 @@ def main():
         comment text,
         FOREIGN KEY (article_id) REFERENCES articles (article_id)
         );"""
-
-    # load json articles and comments
 
     # create db, create tables articles & comments
     conn = create_connection(database)
@@ -172,5 +181,5 @@ def main():
     conn.close()
 
 
-if __name__ == "main__":
+if __name__ == "__main__":
     main()
