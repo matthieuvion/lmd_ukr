@@ -10,8 +10,8 @@ Out of curiosity, a `Dataset` of articles and comments from Le Monde, 1 year cov
 ### Dataset
 ---
 ![dataset structure](https://github.com/matthieuvion/lmd_ukr/blob/main/dataset/cols_overview.png?raw=True "dataset structure")
-> Download [/dataset](https://github.com/matthieuvion/lmd_ukr/tree/main/dataset) (40mb) <br>
-> 236 k comments and associated articles (2 k unique), title & article desc <br>
+> Download [/dataset](https://github.com/matthieuvion/lmd_ukr/tree/main/dataset) (Compressed Parquet, 40mb) <br>
+> 236 k comments and associated articles (2 k unique), title, content (truncated if premium), desc & date <br>
 
 
 
