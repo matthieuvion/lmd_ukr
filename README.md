@@ -6,6 +6,22 @@
 Out of curiosity, a `Dataset` of articles and comments from Le Monde, 1 year coverage of the War in Ukraine (Feb 24 2022 -> 2023). <br/> *Important* : the data is collected and shared by me for educational & research purposes only ; premium articles (suscriber only) have been truncated to first 2500 characters.
 </br>
 </br>
+
+### Dataset
+---
+
+> Download [/dataset](https://github.com/matthieuvion/lmd_ukr/tree/main/dataset) (40mb) <br>
+> 236 k comments and associated articles (2 k unique), title & article desc <br>
+![dataset structure](https://github.com/matthieuvion/lmd_ukr/blob/master/dataset/cols_overview.png "dataset structure")
+
+
+
+#### Limitations (comments):
+- no distinction between comments and replies-to-comment
+- no timestamp, only associated article (last) publication date
+
+
+
 ### Workflow, things you might re-use
 ---
 
@@ -18,19 +34,10 @@ Out of curiosity, a `Dataset` of articles and comments from Le Monde, 1 year cov
 \- API & use examples with caching available repo ; added some documentation in-code (rate limits etc.) <br>
 
 #### 2. Dataset prep
-\- Parsed data populated into an sqlite db with two tables articles and comments with shared key (article_id) <br>
+\- Parsed data populated into an sqlite db with two tables articles and comments with shared key `article_id` <br>
 \- This was optional, but wanted to refresh my skills and it allows to remove duplicates when building our db <br>
 \- Formating / cleaning using `Polars`, wanted to benchmark v. `Pandas` (cf. [notebook](https://github.com/matthieuvion/lmd_ukr/blob/main/lmd_ukr/build_parquet_dataset.ipynb)) <br>
 \- Final file is a joined articles-comments (tidy) parquet file. <br>
-
-### Dataset
----
-
-Download [/dataset](https://github.com/matthieuvion/lmd_ukr/tree/main/dataset) (40mb)
-
-#### Limitations (comments):
-- no distinction between comments and replies-to-comment
-- no timestamp, only the day of article publication
 
 
 
