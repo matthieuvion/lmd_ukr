@@ -12,7 +12,7 @@ Out of curiosity, a `Dataset` of articles and comments from Le Monde, 1 year cov
 
 > Download [/dataset](https://github.com/matthieuvion/lmd_ukr/tree/main/dataset) (40mb) <br>
 > 236 k comments and associated articles (2 k unique), title & article desc <br>
-![dataset structure](https://github.com/matthieuvion/lmd_ukr/blob/master/dataset/cols_overview.png "dataset structure")
+![dataset structure](https://github.com/matthieuvion/lmd_ukr/blob/main/dataset/cols_overview.png "dataset structure")
 
 
 
