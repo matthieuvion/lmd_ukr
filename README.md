@@ -15,10 +15,12 @@ Out of curiosity, a `Dataset` of articles and comments from Le Monde, 1 year cov
 
 
 
-#### Limitations (comments):
-- no distinction between comments and replies-to-comment
-- no timestamp, only associated article (last) publication date
-
+#### Remarks / Limitations :
+- Articles truly about Ukraine War, not a simple mention, using a prior filter on articles tags.
+- Lives and Blog type articles not collected; all other types are (Edito etc.)
+- Articles authors (journalists) not collected, purposely.
+- No distinction between comments and replies-to-comment.
+- No timestamp, only associated article (last) publication date.
 
 
 ### Workflow, things you might re-use
