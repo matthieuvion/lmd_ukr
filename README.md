@@ -3,15 +3,19 @@
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
 
 
-Out of curiosity, a `Dataset` of articles and comments from Le Monde, 1 year coverage of the War in Ukraine (Feb 24 2022 -> 2023). <br/> *Important* : the data is collected and shared by me for educational & research purposes only ; premium articles (suscriber only) have been truncated to first 2500 characters.
-</br>
-</br>
+Always the same boring english datasets.<br>
+Out of curiosity and as an avid reader of Le Monde, here a `Dataset` collected from my fav newspaper :  1 year coverage of the Ukraine Invasion (Feb 24 2022 -> 2023) as well as the tools used to build it.<br>
+You might want to check the subsequent analysis I made out of this data on the [sibling repo](https://github.com/matthieuvion/lmd_viz) or access [this](https://matthieuvion.github.io/lmd_viz/) rendered version
+
+*Important* : the data is collected and shared by me for educational & research purposes only ; premium articles (suscriber only) have been truncated to first 2500 characters.
+
 
 ### Dataset
 ---
-![dataset structure](https://github.com/matthieuvion/lmd_ukr/blob/main/dataset/cols_overview.png?raw=True "dataset structure")
 > Download [/dataset](https://github.com/matthieuvion/lmd_ukr/tree/main/dataset) (Compressed Parquet, 40mb) <br>
 > 236 k comments and associated articles (2 k unique), title, content (truncated if premium), desc & date <br>
+![dataset structure](https://github.com/matthieuvion/lmd_ukr/blob/main/dataset/cols_overview.png?raw=True "dataset structure")
+
 
 
 
