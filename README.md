@@ -27,14 +27,17 @@ Out of curiosity, a `Dataset` of articles and comments from Le Monde, 1 year cov
 ---
 
 #### 1. Data Collection
-**Custom API** <br>
+**Custom API** (`lmd_ukr/api.py`)<br>
 \- To be seen as a good, but not top (i.e. scalable etc.) one-shot-project" API, shared "as is" <br>
 \- Le Monde does not offer a public API --as the New York Times ;) <br>
 \- Personal credentials (suscriber) are required, because comments are suscribers-only <br>
 \- Built using `httpx` for requests & `selectolax` for parsing <br>
-\- API & use examples with caching available repo ; added some documentation in-code (rate limits etc.) <br>
+\- API & use examples with caching are available in `lmd_ukr/examples`; added some documentation in-code (rate limits etc.) <br>
+
+
 
 #### 2. Dataset prep
+\- Checkout `lmd_ukr/build_sqlite_dataset.py` and `build_parquet_dataset.ipynb` <br>
 \- Parsed data populated into an sqlite db with two tables articles and comments with shared key `article_id` <br>
 \- This was optional, but wanted to refresh my skills and it allows to remove duplicates when building our db <br>
 \- Formating / cleaning using `Polars`, wanted to benchmark v. `Pandas` (cf. [notebook](https://github.com/matthieuvion/lmd_ukr/blob/main/lmd_ukr/build_parquet_dataset.ipynb)) <br>
